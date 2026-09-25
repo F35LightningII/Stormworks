@@ -24,6 +24,25 @@ block's composite input.
 - Channel 1: azimuth, -1..1 = -180°..+180° (0 = front, + = right)
 - Channel 2: elevation, -1..1 = -90°..+90° (0 = level, + = up)
 
+### Countermeasure output
+
+The script also sets composite **boolean** channel 1. It turns on as soon
+as any detector is on, and stays on for `HOLD` ticks after the last one
+goes off. A sweeping radar only lights a detector briefly, so the hold
+stops the output from flickering. Set `HOLD=0` to follow the detectors
+exactly.
+
+To get it out of the MC:
+
+1. Add an On/Off Output node (e.g. Output 2, `Countermeasure_Trigger`).
+2. Add a `Composite Read (On/Off)` node set to channel 1.
+3. Wire the script's composite output into that Read node, and wire the
+   Read node to Output 2.
+
+The script's composite output also still goes straight to Output 1.
+Numbers and booleans travel on separate channels, so the radar's number
+channels 1 and 2 are not affected.
+
 ## How it works
 
 Each detector that is on adds a unit vector: front/back on x, right/left
