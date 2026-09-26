@@ -1,9 +1,10 @@
 # Laser Wavelength Sweeper — Countermeasure MC
 
-A microcontroller that, while a `Missile Alert` boolean is high, drives ten
-laser emitters through a wide band of integer wavelengths so that, sooner or
-later, one of them lands on the channel an enemy **Laser Point Sensor** is
-listening on.
+A microcontroller that continuously drives ten laser emitters through a wide
+band of integer wavelengths so that, sooner or later, one of them lands on the
+channel an enemy **Laser Point Sensor** is listening on. The sweep has no
+inputs. Turning the lasers on and off is left to your own key, wired straight
+to the emitters.
 
 This is pure game logic. The script only rewrites ten number outputs, once
 per tick at 60 Hz.
@@ -18,7 +19,6 @@ per tick at 60 Hz.
 | The Lua block reads and writes one **composite** bus (`input.getBool/getNumber`, `output.setBool/setNumber` by channel). `property.getNumber` reads property nodes by label. | Verified, standard Stormworks Lua API. |
 | The wavelength on a Laser Beacon or Laser Distance Sensor can be changed **by a logic number input** while the vehicle is running, not only as an editor setting. | **Not verified. Check it before you build.** In the editor, hover each connector on the block. If there's no number input for wavelength or frequency, the value is fixed at spawn and **no sweep of any kind is possible.** See §5 for the fallback. |
 | The real wavelength range, and whether values are integers. | **Not verified.** That's why the range is set by `Min WL` and `Max WL` properties instead of being hard-coded. Set them to the limits the block's own slider or tooltip shows. |
-| There is no vanilla "missile warning" block. | `Missile Alert` has to come from your own radar logic, for example a radar contact closing faster than X m/s inside Y metres. |
 
 ### The tactical catch
 
@@ -33,8 +33,7 @@ can even help them. To work as a decoy, the matching point has to show up
   a point where it hits terrain or sea, which is well away from you. This is
   the most useful layout for a sweeper.
 * **Laser Beacons on a jettisoned decoy pod.** A detachable sub-vehicle with
-  its own MC or a copy of this one, released with a detacher when the alert
-  fires.
+  its own copy of this MC, released with a detacher.
 * Beacons on the hull are useful only for **testing** the sweep against your
   own Laser Point Sensor.
 
@@ -51,7 +50,9 @@ longer but the full sweep slower.
 ## 1. The Lua code
 
 [`laser_sweeper.lua`](./laser_sweeper.lua) is about 1.8 KB, well under the
-4096-character limit. The work per tick is one loop of 10 `setNumber` calls.
+4096-character limit. The work per tick is one loop of 10 `setNumber` calls. It reads no inputs and
+simply sweeps on every tick. The lasers only emit when your separate enable
+key powers them.
 
 How it sweeps: the band `[Min WL, Max WL]` is split into 10 equal **lanes**
 of width `stride = ceil(span/10)`. Emitter *i* starts at the bottom of lane
@@ -61,10 +62,6 @@ lanes move together, so **every integer in the band gets covered once every
 covered in 10 ticks, which is 1/6 s. Coverage was checked for spans that are
 multiples of 10, spans that aren't, and spans smaller than 10.
 
-`Hold` keeps the sweep running for a moment after `Missile Alert` drops, so a
-radar contact that flickers doesn't keep cutting the jammer on and off. When
-inactive, all outputs go to 0 and `Emitter Enable` goes low.
-
 ---
 
 ## 2. Microcontroller node map
@@ -73,24 +70,19 @@ inactive, all outputs go to 0 and `Emitter Enable` goes low.
 
 | Node type | Label | Direction |
 |---|---|---|
-| `On/Off Input` | `Missile Alert` | in |
 | `Number Output` ×10 | `WL 1` … `WL 10` | out |
-| `On/Off Output` | `Emitter Enable` | out |
 
 ### Internal nodes
 
 | Node | Setting | Wiring |
 |---|---|---|
-| `Composite Write (On/Off)` | Channel **1** | `Missile Alert` input → this node → Lua block composite input |
-| `Lua Script` | paste `laser_sweeper.lua` | composite in from above; composite out → the reads below |
+| `Lua Script` | paste `laser_sweeper.lua` | composite input left unconnected; composite out → the reads below |
 | `Composite Read (Number)` ×10 | Channels **1…10** | Lua composite out → each read → `WL 1` … `WL 10` |
-| `Composite Read (On/Off)` | Channel **1** | Lua composite out → `Emitter Enable` |
-| `Property Number` ×4 (optional) | labels exactly `Min WL`, `Max WL`, `Dwell`, `Hold` | Not wired. The script reads them by label. If one is missing, its default is used. |
+| `Property Number` ×3 (optional) | labels exactly `Min WL`, `Max WL`, `Dwell` | Not wired. The script reads them by label. If one is missing, its default is used. |
 
 The Lua block has **one composite input and one composite output**.
-`input.getBool(1)` means composite boolean channel 1, and
-`output.setNumber(3, …)` means composite number channel 3. That's why the
-Composite Write and Composite Read nodes are needed.
+`output.setNumber(3, …)` means composite number channel 3, which is why the
+Composite Read nodes are needed. The composite input isn't used.
 
 ---
 
@@ -101,11 +93,10 @@ Composite Write and Composite Read nodes are needed.
    which connector sets the wavelength, whether it takes a number, and the
    range the block allows. If it's editor-only, stop and go to §5.
 2. **Place the microcontroller.** Logic category → Microcontroller. Any
-   size with 12 free connectors will do.
-3. **Build the logic** following §2: 1 on/off input, 10 number outputs,
-   1 on/off output, 1 Composite Write (On/Off) on ch 1, the Lua block,
-   10 Composite Read (Number) on ch 1–10, 1 Composite Read (On/Off) on
-   ch 1, and optionally the 4 property nodes. Set `Min WL` and `Max WL` to
+   size with 10 free connectors will do.
+3. **Build the logic** following §2: 10 number outputs, the Lua block,
+   10 Composite Read (Number) on ch 1–10, and optionally the 3 property
+   nodes. Set `Min WL` and `Max WL` to
    the range you found in step 1.
 4. **Mount the emitters.** Laser Distance Sensors are the preferred choice
    (see §0):
@@ -115,18 +106,17 @@ Composite Write and Composite Read nodes are needed.
    * Keep the beams from hitting your own hull. A point painted on
      yourself is no use as a decoy.
    * If you use a decoy pod instead, put the beacons and a copy of this MC
-     on the pod, and route `Missile Alert` across the detacher on a
-     composite or on/off link before separation.
+     on the pod, and route your enable key across the detacher before
+     separation.
 5. **Wire the vehicle.**
    * `WL n` → wavelength number input of emitter *n*, for n = 1…10.
-   * `Emitter Enable` → the on/off or power input of **all 10** emitters.
-     They're only lit while jamming, so you don't advertise yourself the
-     rest of the time.
-   * Your radar threat logic's boolean → `Missile Alert`.
+   * Your existing enable key → the on/off or power input of **all 10**
+     emitters, so they're only lit while you're jamming. The MC doesn't
+     touch this.
    * Power the emitters and the MC from the electrical network as usual.
 6. **Test in the workbench.** Put a Laser Point Sensor on a *second* test
    vehicle set to some wavelength inside your band, for example 37. Turn
-   on `Missile Alert` and watch the sensor's detection output. It should
+   on your laser key and watch the sensor's detection output. It should
    pulse, one tick every `stride` ticks (every 10 with the defaults). Set
    `Dwell` to 30 to slow the sweep down enough to see it by eye.
 7. **Tune.** Narrow `Min WL` and `Max WL` to the wavelengths enemies
@@ -141,7 +131,6 @@ Composite Write and Composite Read nodes are needed.
 |---|---|---|
 | `Min WL` / `Max WL` | 0 / 99 | The band to sweep. A narrower band means each wavelength is revisited more often. |
 | `Dwell` | 1 | Ticks each value is held. Blips get longer, the full cycle gets slower (`stride × Dwell` ticks). |
-| `Hold` | 120 | Ticks to keep sweeping after the alert clears. 120 ticks = 2 s. |
 
 ---
 
@@ -150,6 +139,5 @@ Composite Write and Composite Read nodes are needed.
 If you can't set the wavelength from logic, you can't sweep it at runtime.
 The nearest workable design is a **static spread**: give each emitter a
 different fixed wavelength in the editor, covering the channels you most
-expect enemies to use, and use this MC only for `Emitter Enable`. That
-turns them all on together when the alert fires, with the `Hold` behaviour
-intact. The `WL` outputs are simply left unconnected.
+expect enemies to use, and switch them all with your enable key. This MC
+isn't needed in that case.
